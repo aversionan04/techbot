@@ -1,0 +1,129 @@
+import numpy as np
+import pandas as pd # python package that is used to data from data sets
+import tensorflow as tf # a package that is used to create models and algorithms
+#---------------------------------------------------------------------------------------------------------#
+
+#LOADING DATASETS USING PANDAS
+# We decided to split the data into training and testing data before running the code, 
+# as we found it to keep the code neater, and more efficient. We did, however, make sure to shuffle the data
+# beforehand so that both the training and testing data would have a good spread of data
+dftrain = pd.read_csv('train.csv')  #our training dataset
+dftest = pd.read_csv('test.csv')  #our testing dataset
+
+#---------------------------------------------------------------------------------------------------------#
+
+y_train = dftrain.pop('chanceyChancey') #establishing the column of labels (for the training dataset)
+y_test = dftest.pop('chanceyChancey') #establishing the column of labels (for the testing dataset)
+
+# We are differentiating between the categorical columns (columns with cell values that are not numerical) and the
+# numerical columns. For the categorical columns, we will be converting them to numerical values so that the system
+# will be able to process it. 
+CATEGORICAL_COLUMNS = ['SmokingStatus', 'Gender'] #columns with non-numerical values
+NUMERICAL_COLUMNS = ['Age', 'Weight'] #columns with numerical values
+
+feature_columns = [] # setting up an empty list to feed with data during our for loops. will later be fed to our model
+
+for feature_name in CATEGORICAL_COLUMNS:
+    vocabulary = dftrain[feature_name].unique() #getting all of the unique values from each of the categorical columns
+    feature_columns.append(tf.feature_column.categorical_column_with_vocabulary_list(feature_name, vocabulary)) 
+    # this was actually one of the reasons why we used tensorflow, because it has features already built into it e.g tf.feature_column yada yada
+    # that allow us to easily  create a new column with our features and their relevant vocab. This column will later be used for our linear
+    # model. We had earlier experimented with doing things such as converting the feature names to numpy arrays, however we found this wasn't
+    # very compatible, or even necessary, for the type of model we are creating. Which is linear. 
+
+
+for feature_name in NUMERICAL_COLUMNS:
+    # Since the values in the numerical columns are welll... numerical... there was no need to get the list of vocabulary
+    feature_columns.append(tf.feature_column.numeric_column(feature_name, dtype=tf.float32)) 
+    #instead, we just appended these values straight into our feature_columns
+
+
+print(feature_columns) 
+
+#---------------------------------------------------------------------------------------------------------#
+
+#We printed just to make sure that the data looked as expected. When we first ran this, we ran into a problem,
+#but that was because initially one of the columns in the numerical_columns list was actually non-numerical. We, however,
+# made the relevant changes in both our dataset (fixing the way we wrote the values) and the code (adding the column to the right list)
+# and fixed the issue.
+
+#---------------------------------------------------------------------------------------------------------#
+
+#We used a pretty standard input function for our linear model, and it nests an inner function that will later be returned 
+# as an object for us to use. The function basically specifies how the data is to be transformed to a tf.data.Dataset
+def make_input_fn(data_df, label_df, num_epochs=10, shuffle=True, batch_size=32): #call them hyper-parameters
+  #we chose batch_size 32 because we found it to be a pretty default value. And after experimenting with the number of epochs, we foujd
+  # 'number' to give the most accurate results. We tried to be careful with setting the epoch number too high, as this would lead to
+  # overfitting.
+  def input_function(): 
+    ds = tf.data.Dataset.from_tensor_slices((dict(data_df), label_df)) #create tf.data.Dataset object with the data and its label
+    if shuffle:
+      ds = ds.shuffle(1000) #we then randomize the order of the data again (better to be safe than sorry)
+    ds = ds.batch(batch_size).repeat(num_epochs) #split dataset into batches of 32 and repeat process for number of epochs.
+    return ds #return a batch of the dataset
+  return input_function #return a function object for use
+
+train_input_fn = make_input_fn(dftrain, y_train) #creating our training function by fitting the input function with our training dataframe and column 
+test_input_fn = make_input_fn(dftest, y_test, num_epochs=1, shuffle=False) 
+#doing the same with the testing data but assigning a smaller number of epochs since there is less data in the testing dataset
+
+#---------------------------------------------------------------------------------------------------------#
+
+#Creating a linear estimaor by feeding it the feature columns from before.
+#Initially we were doing linear regression however this was not the most feasible option for our dataset as it was predicting values. 
+# In our case, we want it to predict the class of the input (1 or 0) and provide us with the probabilities of each.
+linear_est = tf.estimator.LinearClassifier(feature_columns=feature_columns) 
+
+#Then we get into training the model by fitting the linear classifier model with our training info from earlier
+linear_est.train(train_input_fn) 
+result0 = linear_est.evaluate(train_input_fn)
+#printing our training accuracy so we can later compare it with our testing accuracy
+print(result0['accuracy'])
+
+#Once our model has run on the testing data, it then 'tests' itself on the testing data and we assign the model evaluation to a result
+# variable which we will later pull the accuracy metrics from.
+result = linear_est.evaluate(test_input_fn) 
+
+#printing our testing accuracy for comparison
+print(result['accuracy']) 
+
+
+#we then converted the testing results into a list so we could look at the results for individual rows in our dataset
+result = list(linear_est.predict(test_input_fn))
+print(dftest.loc[124]) #in this example we use 'loc' to access 125th item and print it, before we go to predicting their chance at infertility
+
+
+# #A quick conditional statement to determine whether person 125 has a high or low chance of infertilitity. 
+# if result[124]['probabilities'][1] >= 0.5: 
+#   #here if the probability value is greater than or equal to 0.5, the person has a high chance of fertility
+#     print("That person has a High chance of infertility.")
+# else:
+#   #here if the probability value is less than 0.5, the person has a high chance of fertility
+#     print("That person has a Low chance of infertfility.")
+
+
+def input_fn(features, batch_size=256): 
+#Convert the inputs to a dataset without labels - we don't know the labels, the model should give us the answer
+    return tf.data.Dataset.from_tensor_slices(dict(features)).batch(batch_size)
+
+OUTPUTS = ['0', '1']
+features = ['SmokingStatus', 'Gender', 'Age', 'Weight']
+predict = {} #dict
+
+print("Please type your information as follows.")
+for feature in features:
+    val = input(feature + ": ")
+    
+
+# userInput = input_fn(predict)
+# print(userInput)
+# predictions = linear_est.predict(userInput)
+# print(predictions)
+# for pred_dict in predictions: #every prediction comes back as a dict in predictions
+#     print(pred_dict)
+#     class_id = pred_dict['class_ids'][0]  #if i forget what this does just do print(pred_dict) and read through the thingies to understand
+#     probability = pred_dict['probabilities'][class_id]
+
+#     print("Prediction is '{}' ({:.1f}%)".format(
+#         OUTPUTS[class_id], 100 * probability
+#     ))
